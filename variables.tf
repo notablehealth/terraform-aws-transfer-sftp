@@ -86,3 +86,9 @@ variable "eip_enabled" {
   description = "Whether to provision and attach an Elastic IP to be used as the SFTP endpoint. An EIP will be provisioned per subnet."
   default     = false
 }
+
+variable "structured_log_destinations" {
+  type        = list(string)
+  description = "This is a list of Cloudwatch log groups to route structured logs to; providing any enables structured log output."
+  default     = null
+}
