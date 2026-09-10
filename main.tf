@@ -11,6 +11,16 @@ locals {
       s3_bucket_arn = val.s3_bucket_name != null ? "${local.s3_arn_prefix}${val.s3_bucket_name}" : one(data.aws_s3_bucket.landing[*].arn)
     })
   }
+
+  user_ssh_keys = merge([
+    for user, val in var.sftp_users : {
+      for idx, key in val.public_keys :
+      "${val.user_name}.${idx}" => {
+        user_name  = val.user_name
+        public_key = key
+      }
+    }
+  ]...)
 }
 
 data "aws_partition" "default" {
@@ -88,7 +98,7 @@ resource "aws_transfer_user" "default" {
 }
 
 resource "aws_transfer_ssh_key" "default" {
-  for_each = local.enabled ? var.sftp_users : {}
+  for_each = local.enabled ? local.user_ssh_keys : {}
 
   server_id = join("", aws_transfer_server.default[*].id)
 
