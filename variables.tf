@@ -7,7 +7,7 @@ variable "domain" {
 variable "sftp_users" {
   type = map(object({
     user_name           = string
-    public_key          = string
+    public_keys         = list(string)
     s3_bucket_name      = optional(string)
     bucket_permissions  = optional(list(string))
     home_directory_type = optional(string)
@@ -18,7 +18,7 @@ variable "sftp_users" {
     })))
   }))
   default     = {}
-  description = "Map of SFTP users and their configurations. Required: user_name, public_key. Optional: s3_bucket_name, bucket_permissions, home_directory_type, home_directory, home_directory_mappings"
+  description = "Map of SFTP users and their configurations. Required: user_name, public_keys. Optional: s3_bucket_name, bucket_permissions, home_directory_type, home_directory, home_directory_mappings"
 }
 
 variable "restricted_home" {
@@ -85,4 +85,10 @@ variable "eip_enabled" {
   type        = bool
   description = "Whether to provision and attach an Elastic IP to be used as the SFTP endpoint. An EIP will be provisioned per subnet."
   default     = false
+}
+
+variable "structured_log_destinations" {
+  type        = list(string)
+  description = "This is a list of Cloudwatch log groups to route structured logs to; providing any enables structured log output."
+  default     = null
 }

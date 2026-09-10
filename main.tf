@@ -11,6 +11,16 @@ locals {
       s3_bucket_arn = val.s3_bucket_name != null ? "${local.s3_arn_prefix}${val.s3_bucket_name}" : one(data.aws_s3_bucket.landing[*].arn)
     })
   }
+
+  user_ssh_keys = merge([
+    for user, val in var.sftp_users : {
+      for idx, key in val.public_keys :
+      "${val.user_name}.${idx}" => {
+        user_name  = val.user_name
+        public_key = key
+      }
+    }
+  ]...)
 }
 
 data "aws_partition" "default" {
@@ -26,13 +36,14 @@ data "aws_s3_bucket" "landing" {
 resource "aws_transfer_server" "default" {
   count = local.enabled ? 1 : 0
 
-  identity_provider_type = "SERVICE_MANAGED"
-  protocols              = ["SFTP"]
-  domain                 = var.domain
-  endpoint_type          = local.is_vpc ? "VPC" : "PUBLIC"
-  force_destroy          = var.force_destroy
-  security_policy_name   = var.security_policy_name
-  logging_role           = join("", aws_iam_role.logging[*].arn)
+  identity_provider_type      = "SERVICE_MANAGED"
+  protocols                   = ["SFTP"]
+  domain                      = var.domain
+  endpoint_type               = local.is_vpc ? "VPC" : "PUBLIC"
+  force_destroy               = var.force_destroy
+  security_policy_name        = var.security_policy_name
+  logging_role                = join("", aws_iam_role.logging[*].arn)
+  structured_log_destinations = var.structured_log_destinations
 
   dynamic "endpoint_details" {
     for_each = local.is_vpc ? [1] : []
@@ -87,7 +98,7 @@ resource "aws_transfer_user" "default" {
 }
 
 resource "aws_transfer_ssh_key" "default" {
-  for_each = local.enabled ? var.sftp_users : {}
+  for_each = local.enabled ? local.user_ssh_keys : {}
 
   server_id = join("", aws_transfer_server.default[*].id)
 
