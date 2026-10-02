@@ -7,7 +7,7 @@ locals {
 
   user_names_map = {
     for user, val in var.sftp_users :
-    user => merge(val, {
+    val.user_name => merge(val, {
       s3_bucket_arn = val.s3_bucket_name != null ? "${local.s3_arn_prefix}${val.s3_bucket_name}" : one(data.aws_s3_bucket.landing[*].arn)
     })
   }
@@ -18,6 +18,25 @@ locals {
       "${val.user_name}.${idx}" => {
         user_name  = val.user_name
         public_key = key
+      }
+    }
+  ]...)
+
+  secondary_users = merge([
+    for primary_key, primary in var.sftp_users : {
+      for secondary_key, secondary in primary.secondary_users : "${primary.user_name}.${secondary.user_name}" => merge(secondary, {
+        primary_user_name = primary.user_name
+        s3_prefix         = secondary.subdirectory != null ? "${primary.user_name}/${secondary.subdirectory}" : primary.user_name
+      })
+    }
+  ]...)
+
+  secondary_user_ssh_keys = merge([
+    for key, val in local.secondary_users : {
+      for idx, pub_key in val.public_keys :
+      "${val.user_name}.${idx}" => {
+        user_name  = val.user_name
+        public_key = pub_key
       }
     }
   ]...)
@@ -242,6 +261,109 @@ resource "aws_iam_role_policy_attachment" "s3_access_for_sftp_users" {
 
   role       = aws_iam_role.s3_access_for_sftp_users[each.value.user_name].name
   policy_arn = aws_iam_policy.s3_access_for_sftp_users[each.value.user_name].arn
+}
+
+resource "aws_transfer_user" "secondary" {
+  for_each = local.enabled && var.restricted_home ? local.secondary_users : {}
+
+  server_id = join("", aws_transfer_server.default[*].id)
+  role      = aws_iam_role.s3_access_for_secondary_sftp_users[each.key].arn
+
+  user_name = each.value.user_name
+
+  home_directory_type = "LOGICAL"
+
+  home_directory_mappings {
+    entry  = "/"
+    target = "/${coalesce(local.user_names_map[each.value.primary_user_name].s3_bucket_name, var.s3_bucket_name)}/${each.value.s3_prefix}"
+  }
+
+  tags = module.this.tags
+}
+
+resource "aws_transfer_ssh_key" "secondary" {
+  for_each = local.enabled && var.restricted_home ? local.secondary_user_ssh_keys : {}
+
+  server_id = join("", aws_transfer_server.default[*].id)
+
+  user_name = each.value.user_name
+  body      = each.value.public_key
+
+  depends_on = [
+    aws_transfer_user.secondary
+  ]
+}
+
+data "aws_iam_policy_document" "s3_access_for_secondary_sftp_users" {
+  for_each = local.enabled && var.restricted_home ? local.secondary_users : {}
+
+  statement {
+    sid    = "AllowListingOfUserFolder"
+    effect = "Allow"
+
+    actions = [
+      "s3:ListBucket"
+    ]
+
+    resources = [
+      local.user_names_map[each.value.primary_user_name].s3_bucket_arn,
+    ]
+  }
+
+  statement {
+    sid    = "HomeDirObjectAccess"
+    effect = "Allow"
+
+    actions = coalesce(each.value.bucket_permissions, [
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:DeleteObject",
+      "s3:DeleteObjectVersion",
+      "s3:GetObjectVersion",
+      "s3:GetObjectACL",
+      "s3:PutObjectACL"
+    ])
+
+    resources = [
+      "${local.user_names_map[each.value.primary_user_name].s3_bucket_arn}/${each.value.s3_prefix}/*"
+    ]
+  }
+}
+
+module "secondary_iam_label" {
+  for_each = local.enabled && var.restricted_home ? local.secondary_users : {}
+
+  source  = "cloudposse/label/null"
+  version = "0.25.0"
+
+  attributes = ["transfer", "s3", each.value.user_name]
+
+  context = module.this.context
+}
+
+resource "aws_iam_policy" "s3_access_for_secondary_sftp_users" {
+  for_each = local.enabled && var.restricted_home ? local.secondary_users : {}
+
+  name   = module.secondary_iam_label[each.key].id
+  policy = data.aws_iam_policy_document.s3_access_for_secondary_sftp_users[each.key].json
+
+  tags = module.this.tags
+}
+
+resource "aws_iam_role" "s3_access_for_secondary_sftp_users" {
+  for_each = local.enabled && var.restricted_home ? local.secondary_users : {}
+
+  name               = module.secondary_iam_label[each.key].id
+  assume_role_policy = join("", data.aws_iam_policy_document.assume_role_policy[*].json)
+
+  tags = module.this.tags
+}
+
+resource "aws_iam_role_policy_attachment" "s3_access_for_secondary_sftp_users" {
+  for_each = local.enabled && var.restricted_home ? local.secondary_users : {}
+
+  role       = aws_iam_role.s3_access_for_secondary_sftp_users[each.key].name
+  policy_arn = aws_iam_policy.s3_access_for_secondary_sftp_users[each.key].arn
 }
 
 resource "aws_iam_policy" "logging" {

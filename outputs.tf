@@ -18,6 +18,11 @@ output "s3_access_role_arns" {
   value       = { for user, val in aws_iam_role.s3_access_for_sftp_users : user => val.arn }
 }
 
+output "secondary_s3_access_role_arns" {
+  description = "Role ARNs for secondary SFTP users"
+  value       = { for key, val in aws_iam_role.s3_access_for_secondary_sftp_users : key => val.arn }
+}
+
 output "endpoint_details" {
   description = "Endpoints details"
   value       = module.this.enabled ? one(aws_transfer_server.default[*].endpoint_details) : null

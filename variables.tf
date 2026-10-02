@@ -16,9 +16,17 @@ variable "sftp_users" {
       entry  = string
       target = string
     })))
+    secondary_users = optional(map(object({
+      user_name    = string
+      public_keys  = list(string)
+      # This subdirectory is implicitly nested under the main user's home dir,
+      # and is not expected to contain a leading slash.
+      subdirectory = optional(string)
+      bucket_permissions  = optional(list(string))
+    })), {})
   }))
   default     = {}
-  description = "Map of SFTP users and their configurations. Required: user_name, public_keys. Optional: s3_bucket_name, bucket_permissions, home_directory_type, home_directory, home_directory_mappings"
+  description = "Map of SFTP users and their configurations. Required: user_name, public_keys. Optional: s3_bucket_name, bucket_permissions, home_directory_type, home_directory, home_directory_mappings, secondary_users"
 }
 
 variable "restricted_home" {
